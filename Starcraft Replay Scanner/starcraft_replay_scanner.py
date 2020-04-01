@@ -3,78 +3,116 @@ import sc2reader
 import time
 import os.path
 import os
+import sys
+import datetime
 
-#ask for user config info
+# ask for user config info
 def request_user_input():
     print("input the absolute path of your replay folder")
     replay_path = input()
     print("input the name of your desired output file (csv format)")
     output_file = input()
-    print("input your starcraft 2 username")
-    username = input().lower()
-    return replay_path, output_file, username
+    print("input your starcraft 2 usernames (as csv so user1,user2,user3)")
+    usernames = input().lower()
+    print("input the desired races you wish to record as a csv list (so t,z,p for terran zerg and protoss)")
+    races = input().upper()
+    return replay_path, output_file, usernames, races
 
-#setup output
+# setup output
 def init_output(output_file, headers):
-    output = open(output_file, "w")
-    output.write(headers)
-    output.close()
-    
-def write_output(matches_to_append, output_file):
-    with open(output_file, "a") as output:
-        for line in matches_to_append:
-            output.write(line)
-            output.write("\n")
+    try:
+        output = open(output_file, "w")
+        output.write(headers)
+        output.close()
+    except:
+        print("unable to write headers to output file, most likely in use")
+        
+# write output to csv file
+def write_output(matches_to_append, output_file, last_scan_date, config_dict, config_file):
+    try:
+        with open(output_file, "a") as output:
+            for line in matches_to_append:
+                try:
+                    output.write(line)
+                    output.write("\n")
+                except:
+                    print("failed to write line " + str(line))
+                    continue
+    except:
+        print("unable to update output file most likely in use. Resetting last scan date")
+        config_dict['scanDate'] = last_scan_date
+        update_config(config_dict, config_file)
         
 # update config file with new info
-def update_config(scan_date, replay_path, output_file, username, config_file):
-    config = open(config_file, "w") 
-    config.write(str(scan_date))
-    config.write('\n')
-    config.write(replay_path) 
-    config.write('\n')
-    config.write(output_file)
-    config.write('\n')
-    config.write(username)
-    config.write('\n')
-    config.close() 
-    
-def read_config(config_file):
-    # read config
-    with open(config_file) as f:
-        for i,line in enumerate(f):
-            if (i==0):
-                last_scan_date = float(line.strip())
-            if (i==1):
-                replay_path = line.strip()
-            if (i==2):
-                output_file = line.strip()
-            if (i==3):
-                username = line.strip().lower()
-    return last_scan_date, replay_path, output_file, username
+def update_config(config_dict, config_file):
+    with open(config_file, "w") as config:
+        for key,value in config_dict.items():
+            # join array
+            if type(value) == type([]):
+                value = ",".join(value)
 
-# filter out unwanted replays (only ladder and 1v1)
-def parse_replay(replay, username):
+            config.write(key+"="+str(value)+"\n")
+
+# read config from file
+def read_config(config_file):
+    config_dict = {}
+    with open(config_file) as f:
+        for _,line in enumerate(f):
+            key, value = line.strip().split("=")
+            if "," in value:
+                value = value.lower().split(",")
+            config_dict[key] = value
+    return config_dict#last_scan_date, replay_path, output_file, username
+
+# get all sc2 replay files that have been modified since last scan date (recurse through directories)
+def get_new_replay_file_paths(replay_path, last_scan_date):
+    out = []
+    directory = os.fsencode(replay_path)
+
+    # iterate over replays
+    for file in os.listdir(directory):
+        filename = os.fsdecode(file)
+        curr_path = replay_path + "\\" + filename
+
+        lm = os.path.getmtime(curr_path)
+        if lm > last_scan_date:
+            if curr_path.endswith(".SC2Replay"):
+                out.append(curr_path)
+            elif os.path.isdir(curr_path):
+                out += get_new_replay_file_paths(curr_path, last_scan_date)
+    return sorted(out,  key=os.path.getmtime)
+
+# extract useful information from replay file
+def parse_replay(replay, usernames, config_dict):
     # constants for replay filtering
     ladder = "Ladder"
     ones = "1v1"
+    # filter out unwanted replays (only ladder and 1v1)
     if replay.category != ladder or replay.type != ones:
         return None
+    # player 1 and player 2
     p1 = replay.teams[0].players[0]
     p2 = replay.teams[1].players[0]
-    if (p1.name.lower() == username):
+
+    # find out who is you and who is your opponent
+    if p1.name.lower() in usernames:
         opponent = p2
         you = p1
         res = vars(replay.teams[0])['result']
-    elif(p2.name.lower() == username):
+    elif p2.name.lower() in usernames:
         you = p2
         opponent = p1
         res = vars(replay.teams[1])['result']
     else:
         # filter out replays without wanted user playing
         return None
+    # check race 
+    if you.pick_race[0] not in config_dict["recordedRaces"]:
+        return None
+    # sometimes no result is found
     if res == None :
         res = "Unknown"
+    # format output for csv file
     return ",".join([replay.end_time.strftime("%m-%d-%Y %H:%M"), replay.map_name, you.name, opponent.name, you.pick_race[0], opponent.pick_race[0], res, str(replay.game_length)])
                  
 # run replay scanner daemon
@@ -85,49 +123,61 @@ def run_daemon():
     config_file = "starcraft_replay_scanner.config"
     # headers for output csv
     headers = "date,map,you,opponent,your race,opponent race,win,game length,details\n"
-    #check for existence
-    if (not os.path.exists(config_file)):
-        # get initialization info from user
+    # setup for first time running
+    if not os.path.exists(config_file):
         last_scan_date = 0
-        replay_path, output_file, username = request_user_input()
-    
+        # get initialization info from user
+        replay_path, output_file, usernames, races = request_user_input()
+        config_dict = {"scanDate":scan_date, "replayPath":replay_path, "outputFile":output_file, "username":usernames, "recordedRaces":races}
+        # init config and output
         init_output(output_file, headers)
-        update_config(scan_date, replay_path, output_file, username, config_file)
+        update_config(config_dict, config_file)
     else:    
-        last_scan_date, replay_path, output_file, username = read_config(config_file)
-        update_config(scan_date, replay_path, output_file, username, config_file)             
+        config_dict = read_config(config_file)
+        last_scan_date = float(config_dict["scanDate"])
+        config_dict["scanDate"] = scan_date
+        # update latest scan date
+        update_config(config_dict, config_file)             
 
     # now replay_path is path to replays, last_scan_date is time of last scan, scan_date is time of this scan
     # output_file is name of output file
     matches_to_append = []
 
-    directory = os.fsencode(replay_path)
+    directory = os.fsencode(config_dict['replayPath'])
     
     # iterate over replays
-    for file in sorted(os.listdir(directory), key=lambda x: os.path.getmtime(replay_path + "\\" + os.fsdecode(x))):
-        filename = os.fsdecode(file)
-        absolute_replay_path = replay_path + "\\" + filename
-        # last modified date of file
-        lm = os.path.getmtime(absolute_replay_path)
-
+    for path in get_new_replay_file_paths(config_dict["replayPath"], last_scan_date):
         # only add new replays
-        if lm > last_scan_date:
-            try:
-            	replay = sc2reader.load_replay(absolute_replay_path, load_level=2)
-            	parsed = parse_replay(replay,username)
-            except:
-            	print("failed for file {}".format(filename) )
-            	# ignore failures for now
-            	continue
-            # skip failed parses
-            if parsed == None:
-                continue
-            matches_to_append.append(parsed)
-            
-    write_output(matches_to_append, output_file)
+        try:
+            replay = sc2reader.load_replay(path, load_level=2)
+        except:
+            print("failed for file {}".format(path))
+            # ignore failures for now
+            continue
+        parsed = parse_replay(replay,config_dict['username'], config_dict)
+        # skip failed parses
+        if parsed == None:
+            continue
+        matches_to_append.append(parsed)
+    write_output(matches_to_append, config_dict['outputFile'], last_scan_date, config_dict, config_file)
 
 def main():
-	run_daemon()
+    run_in_background = False
+    if len(sys.argv) > 1:
+        run_in_background = True
+        sleep_duration = int(sys.argv[1]) # in seconds
+
+    while True:
+        print("Running Daemon")
+        start_time = datetime.datetime.now()
+        run_daemon()
+        end_time = datetime.datetime.now()
+        elapsed = end_time-start_time
+        print("Finished ({} seconds)".format(elapsed.total_seconds()))
+
+        if not run_in_background:
+            break
+        time.sleep(sleep_duration)
 
 if __name__ == '__main__':
     main()

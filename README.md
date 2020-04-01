@@ -21,6 +21,12 @@ If you want to update any of these settings feel free to edit the starcraft_repl
 - the third entry is the output file path
 - the fourth entry is the player username
 
+# Scheduling
+The first time you should run the script normally by clicking on the bat file to set up the config.
+
+After this you can user Windows Task Scheduler to set up a periodic task so it will automatically update the csv every so often
+
+Details for how to do that can be found here: https://towardsdatascience.com/automate-your-python-scripts-with-task-scheduler-661d0a40b279
 # Trouble shooting
 - The script requires python 3 to run, you can download python 3 here: https://www.python.org/downloads/
 - The script also assumes that python is in your windows path environment variable (how to add it: https://superuser.com/questions/143119/how-do-i-add-python-to-the-windows-path)

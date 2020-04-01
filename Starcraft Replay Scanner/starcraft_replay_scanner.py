@@ -5,6 +5,9 @@ import os.path
 import os
 import sys
 import datetime
+from mpyq import MPQArchive
+import json
+import traceback
 
 # ask for user config info
 def request_user_input():
@@ -83,7 +86,7 @@ def get_new_replay_file_paths(replay_path, last_scan_date):
     return sorted(out,  key=os.path.getmtime)
 
 # extract useful information from replay file
-def parse_replay(replay, usernames, config_dict):
+def parse_replay(replay, usernames, config_dict, filepath):
     # constants for replay filtering
     ladder = "Ladder"
     ones = "1v1"
@@ -99,10 +102,14 @@ def parse_replay(replay, usernames, config_dict):
         opponent = p2
         you = p1
         res = vars(replay.teams[0])['result']
+        your_id = 0
+        opponent_id = 1
     elif p2.name.lower() in usernames:
         you = p2
         opponent = p1
         res = vars(replay.teams[1])['result']
+        your_id = 1
+        opponent_id = 0
     else:
         # filter out replays without wanted user playing
         return None
@@ -112,9 +119,27 @@ def parse_replay(replay, usernames, config_dict):
     # sometimes no result is found
     if res == None :
         res = "Unknown"
+    apmmmr_dict = extract_mmr_apm(filepath, your_id, opponent_id)
     # format output for csv file
-    return ",".join([replay.end_time.strftime("%m-%d-%Y %H:%M"), replay.map_name, you.name, opponent.name, you.pick_race[0], opponent.pick_race[0], res, str(replay.game_length)])
+    return ",".join([replay.end_time.strftime("%m-%d-%Y %H:%M"), replay.map_name, you.name, opponent.name, you.pick_race[0], opponent.pick_race[0], apmmmr_dict['yourMMR'], apmmmr_dict['opponentMMR'], apmmmr_dict['yourAPM'], apmmmr_dict['opponentAPM'],res, str(replay.game_length)])
                  
+def extract_mmr_apm(path, your_id, opponent_id):
+	try:
+		archive = MPQArchive(path)
+
+		players = json.loads(archive.extract()[b'replay.gamemetadata.json'])['Players']
+		
+		if "MMR" not in players[opponent_id]:
+			players[opponent_id]["MMR"] = "Unknown"
+		if "MMR" not in players[your_id]:
+			players[your_id]["MMR"] = "Unkown"
+
+		return {"yourMMR":str(players[your_id]['MMR']), "opponentMMR":str(players[opponent_id]['MMR']), "yourAPM":str(players[your_id]['APM']),"opponentAPM":str(players[opponent_id]['APM'])}
+	except Exception:
+		traceback.print_exc()
+		print("failed to parse mmr/apm for path {}".format(path))
+		return {"yourMMR":"Unknown", "opponentMMR":"Unknown", "yourAPM":"Unknown","opponentAPM":"Unknown"}
+
 # run replay scanner daemon
 def run_daemon():
     # get time of scan
@@ -122,7 +147,7 @@ def run_daemon():
     # config file name
     config_file = "starcraft_replay_scanner.config"
     # headers for output csv
-    headers = "date,map,you,opponent,your race,opponent race,win,game length,details\n"
+    headers = "date,map,you,opponent,your race,opponent race,your mmr,opponent mmr,your apm,opponent apm,win,game length,details\n"
     # setup for first time running
     if not os.path.exists(config_file):
         last_scan_date = 0
@@ -154,7 +179,7 @@ def run_daemon():
             print("failed for file {}".format(path))
             # ignore failures for now
             continue
-        parsed = parse_replay(replay,config_dict['username'], config_dict)
+        parsed = parse_replay(replay,config_dict['username'], config_dict, path)
         # skip failed parses
         if parsed == None:
             continue

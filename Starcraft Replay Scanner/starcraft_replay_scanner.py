@@ -84,7 +84,7 @@ def run_daemon():
     # config file name
     config_file = "starcraft_replay_scanner.config"
     # headers for output csv
-    headers = "date,map,you,opponent,your race,opponents race,win,game length,details\n"
+    headers = "date,map,you,opponent,your race,opponent race,win,game length,details\n"
     #check for existence
     if (not os.path.exists(config_file)):
         # get initialization info from user
@@ -112,8 +112,13 @@ def run_daemon():
 
         # only add new replays
         if lm > last_scan_date:
-            replay = sc2reader.load_replay(absolute_replay_path, load_level=2)
-            parsed = parse_replay(replay,username)
+            try:
+            	replay = sc2reader.load_replay(absolute_replay_path, load_level=2)
+            	parsed = parse_replay(replay,username)
+            except:
+            	print("failed for file {}".format(filename) )
+            	# ignore failures for now
+            	continue
             # skip failed parses
             if parsed == None:
                 continue

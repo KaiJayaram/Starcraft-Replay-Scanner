@@ -84,7 +84,7 @@ def run_daemon():
     # config file name
     config_file = "starcraft_replay_scanner.config"
     # headers for output csv
-    headers = "date,map,you,opponent,player1 race,player2 race,win,game length,details\n"
+    headers = "date,map,you,opponent,your race,opponents race,win,game length,details\n"
     #check for existence
     if (not os.path.exists(config_file)):
         # get initialization info from user

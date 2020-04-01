@@ -1,6 +1,11 @@
 # Starcraft-Replay-Scanner
 A Daemon that scans for new starcraft 2 replays and uploads them to a csv file based on user specified input
 
+# CSV output
+The result is output to a csv file with the following format:
+date,map,your name,opponents name,your race,opponents race,win,game length,details
+
+Everything except details is autofilled (details is for you to list any notes you might have about the game)
 # Installation
 Run the install script (.bat file for windows)
 

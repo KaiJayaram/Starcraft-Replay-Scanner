@@ -76,13 +76,15 @@ def get_new_replay_file_paths(replay_path, last_scan_date):
     for file in os.listdir(directory):
         filename = os.fsdecode(file)
         curr_path = replay_path + "\\" + filename
-
-        lm = os.path.getmtime(curr_path)
-        if lm > last_scan_date:
-            if curr_path.endswith(".SC2Replay"):
-                out.append(curr_path)
-            elif os.path.isdir(curr_path):
-                out += get_new_replay_file_paths(curr_path, last_scan_date)
+        # always scan directories
+        if os.path.isdir(curr_path):
+        	out += get_new_replay_file_paths(curr_path, last_scan_date)
+        else:
+        	# only look at files that have been modified since last scan
+	        lm = os.path.getmtime(curr_path)
+	        if last_scan_date < lm:
+	            if curr_path.endswith(".SC2Replay"):
+	                out.append(curr_path)
     return sorted(out,  key=os.path.getmtime)
 
 # extract useful information from replay file
@@ -173,6 +175,7 @@ def run_daemon():
     # iterate over replays
     for path in get_new_replay_file_paths(config_dict["replayPath"], last_scan_date):
         # only add new replays
+        print("found replay: {}".format(path))
         try:
             replay = sc2reader.load_replay(path, load_level=2)
         except:
@@ -182,7 +185,9 @@ def run_daemon():
         parsed = parse_replay(replay,config_dict['username'], config_dict, path)
         # skip failed parses
         if parsed == None:
-            continue
+        	print("failed to parse replay {}".format(path))
+        	continue
+
         matches_to_append.append(parsed)
     write_output(matches_to_append, config_dict['outputFile'], last_scan_date, config_dict, config_file)
 

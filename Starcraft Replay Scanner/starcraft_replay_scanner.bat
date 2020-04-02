@@ -1,1 +1,1 @@
-python starcraft_replay_scanner.py 600
+python starcraft_replay_scanner.py 30

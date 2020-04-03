@@ -16,7 +16,7 @@ def request_user_input():
     print("input the name of your desired output file (csv format)")
     output_file = input()
     print("input your starcraft 2 usernames (as csv so user1,user2,user3)")
-    usernames = input().lower()
+    usernames = input().lower().strip()
     print("input the desired races you wish to record as a csv list (so t,z,p for terran zerg and protoss)")
     races = input().upper()
     return replay_path, output_file, usernames, races

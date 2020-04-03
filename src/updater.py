@@ -4,9 +4,7 @@ import os
 
 def update():
 	try:
-		cwd = os.getcwd()
-		# go up one directory
-		git_location = os.path.dirname(cwd)
+		git_location = os.getcwd()
 
 		g = git.cmd.Git(git_location)
 		g.pull()

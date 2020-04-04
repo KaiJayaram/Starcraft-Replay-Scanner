@@ -6,8 +6,6 @@ import time
 from updater import update
 from tkinter import messagebox
 
-
-
 class SRSOrchestrator():
 	def __init__(self):
 		self.run_delay = 30
@@ -15,7 +13,7 @@ class SRSOrchestrator():
 	def run(self):
 		if (update()):
 			messagebox.showinfo("Update Available", "Update Available Please Restart program")
-			
+
 		if not os.path.exists(self.config_file):
 			setup_gui = Setup_GUI(self.config_file)
 			setup_gui.start()

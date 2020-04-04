@@ -10,7 +10,7 @@ def update():
 		g = git.cmd.Git(git_location)
 		g.pull()
 		new_hash = repo.head.object.hexsha
-		return orig_hash != new_hash:
+		return orig_hash != new_hash
 
 	except Exception:
 		print("failed to reach git repo to pull updates")

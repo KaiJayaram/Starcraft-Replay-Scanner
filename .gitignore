@@ -2,3 +2,4 @@
 Starcraft Replay Scanner/starcraft_replay_scanner.config
 Starcraft Replay Scanner/*.csv
 Starcraft Replay Scanner/install_config.txt
+src/__pycache__/*

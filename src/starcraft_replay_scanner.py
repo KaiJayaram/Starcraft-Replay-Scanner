@@ -8,18 +8,7 @@ import datetime
 from mpyq import MPQArchive
 import json
 import traceback
-
-# ask for user config info
-def request_user_input():
-    print("input the absolute path of your replay folder")
-    replay_path = input()
-    print("input the name of your desired output file (csv format)")
-    output_file = input()
-    print("input your starcraft 2 usernames (as csv so user1,user2,user3)")
-    usernames = input().lower().replace(" ", "")
-    print("input the desired races you wish to record as a csv list (so t,z,p for terran zerg and protoss)")
-    races = input().upper().replace(" ", "")
-    return replay_path, output_file, usernames, races
+from threading import Thread
 
 # setup output
 def init_output(output_file, headers):
@@ -31,8 +20,10 @@ def init_output(output_file, headers):
         print("unable to write headers to output file, most likely in use")
         
 # write output to csv file
-def write_output(matches_to_append, output_file, last_scan_date, config_dict, config_file):
+def write_output(matches_to_append, output_file, last_scan_date, config_dict, config_file, headers):
     try:
+        if not os.path.exists(output_file):
+            init_output(output_file, headers)
         with open(output_file, "a") as output:
             for line in matches_to_append:
                 try:
@@ -142,72 +133,60 @@ def extract_mmr_apm(path, your_id, opponent_id):
 		print("failed to parse mmr/apm for path {}".format(path))
 		return {"yourMMR":"Unknown", "opponentMMR":"Unknown", "yourAPM":"Unknown","opponentAPM":"Unknown"}
 
-# run replay scanner daemon
-def run_daemon():
-    # get time of scan
-    scan_date = time.time()
-    # config file name
-    config_file = "starcraft_replay_scanner.config"
-    # headers for output csv
-    headers = "date,map,you,opponent,your race,opponent race,your mmr,opponent mmr,your apm,opponent apm,win,game length,details\n"
-    # setup for first time running
-    if not os.path.exists(config_file):
-        last_scan_date = 0
-        # get initialization info from user
-        replay_path, output_file, usernames, races = request_user_input()
-        config_dict = {"scanDate":scan_date, "replayPath":replay_path, "outputFile":output_file, "username":usernames, "recordedRaces":races}
-        # init config and output
-        init_output(output_file, headers)
-        update_config(config_dict, config_file)
-    else:    
+class SC2Scanner(Thread):
+    def __init__(self, sleep_duration):
+        Thread.__init__(self)
+        self.daemon=True
+        self.sleep_duration = sleep_duration
+        self.should_run = True
+    # run replay scanner daemon
+    def run_daemon(self):
+        # get time of scan
+        scan_date = time.time()
+        # config file name
+        config_file = "starcraft_replay_scanner.config"
+        # headers for output csv
+        headers = "date,map,you,opponent,your race,opponent race,your mmr,opponent mmr,your apm,opponent apm,win,game length,details\n"
+        # setup for first time running  
         config_dict = read_config(config_file)
         last_scan_date = float(config_dict["scanDate"])
         config_dict["scanDate"] = scan_date
+
+        # now replay_path is path to replays, last_scan_date is time of last scan, scan_date is time of this scan
+        # output_file is name of output file
+        matches_to_append = []
+
+        directory = os.fsencode(config_dict['replayPath'])
+        
+        # iterate over replays
+        for path in get_new_replay_file_paths(config_dict["replayPath"], last_scan_date):
+            # only add new replays
+            print("found replay: {}".format(path))
+            try:
+                replay = sc2reader.load_replay(path, load_level=2)
+            except:
+                print("failed for file {}".format(path))
+                # ignore failures for now
+                continue
+            parsed = parse_replay(replay,config_dict['username'], config_dict, path)
+            # skip failed parses
+            if parsed == None:
+            	print("failed to parse replay {}".format(path))
+            	continue
+
+            matches_to_append.append(parsed)
+
         # update latest scan date
         update_config(config_dict, config_file)             
+        write_output(matches_to_append, config_dict['outputFile'], last_scan_date, config_dict, config_file, headers)
 
-    # now replay_path is path to replays, last_scan_date is time of last scan, scan_date is time of this scan
-    # output_file is name of output file
-    matches_to_append = []
+    def run(self):
+        while self.should_run:
+            print("Running Daemon")
+            start_time = datetime.datetime.now()
+            self.run_daemon()
+            end_time = datetime.datetime.now()
+            elapsed = end_time-start_time
+            print("Finished ({} seconds)".format(elapsed.total_seconds()))
+            time.sleep(self.sleep_duration)
 
-    directory = os.fsencode(config_dict['replayPath'])
-    
-    # iterate over replays
-    for path in get_new_replay_file_paths(config_dict["replayPath"], last_scan_date):
-        # only add new replays
-        print("found replay: {}".format(path))
-        try:
-            replay = sc2reader.load_replay(path, load_level=2)
-        except:
-            print("failed for file {}".format(path))
-            # ignore failures for now
-            continue
-        parsed = parse_replay(replay,config_dict['username'], config_dict, path)
-        # skip failed parses
-        if parsed == None:
-        	print("failed to parse replay {}".format(path))
-        	continue
-
-        matches_to_append.append(parsed)
-    write_output(matches_to_append, config_dict['outputFile'], last_scan_date, config_dict, config_file)
-
-def main():
-    run_in_background = False
-    if len(sys.argv) > 1:
-        run_in_background = True
-        sleep_duration = int(sys.argv[1]) # in seconds
-
-    while True:
-        print("Running Daemon")
-        start_time = datetime.datetime.now()
-        run_daemon()
-        end_time = datetime.datetime.now()
-        elapsed = end_time-start_time
-        print("Finished ({} seconds)".format(elapsed.total_seconds()))
-
-        if not run_in_background:
-            break
-        time.sleep(sleep_duration)
-
-if __name__ == '__main__':
-    main()
